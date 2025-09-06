@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException, Depends, status
-from fastapi.security import OAuth2PasswordRequestForm
 from models.user import UserCreate, UserResponse
 from database import db
 from passlib.context import CryptContext
