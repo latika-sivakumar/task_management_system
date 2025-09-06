@@ -22,7 +22,6 @@ class TaskCreate(BaseModel):
     category_id: Optional[str] = None  # NEW
     tags: Optional[List[str]] = []  # NEW, list of tag IDs
 
-
 class TaskResponse(TaskCreate):
     task_id: str
     user_id: str
