@@ -1,9 +1,10 @@
 # routes/task.py
 from fastapi import APIRouter, Depends, HTTPException
-from models.task import TaskCreate, TaskResponse
+from models.task import TaskCreate, TaskResponse, TaskStatus,TaskPriority
 from database import db
 from dependencies import get_current_user
 from uuid import uuid4
+from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 tasks_collection = db["tasks"]
@@ -14,7 +15,22 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
     task_doc = task.dict()
     task_doc["task_id"] = str(uuid4())
     task_doc["user_id"] = current_user["id"]
+
+    # Set defaults if missing
+    task_doc.setdefault("title", "")
+    task_doc.setdefault("description", "")
+    task_doc.setdefault("status", TaskStatus.incomplete.value)
+    task_doc.setdefault("priority", TaskPriority.medium.value)
+    task_doc.setdefault("due_date", datetime.utcnow())
+
+    # Only include reminder_time if user actually set it
+    if not task_doc.get("reminder_time"):
+        task_doc.pop("reminder_time", None)
+
     await tasks_collection.insert_one(task_doc)
+
+    # Remove MongoDB _id
+    task_doc.pop("_id", None)
     return TaskResponse(**task_doc)
 
 # Get all tasks for user
@@ -23,6 +39,7 @@ async def get_tasks(current_user: dict = Depends(get_current_user)):
     tasks = []
     cursor = tasks_collection.find({"user_id": current_user["id"]})
     async for task in cursor:
+        task.pop("_id", None)  # REMOVE _id
         tasks.append(TaskResponse(**task))
     return tasks
 
@@ -36,7 +53,11 @@ async def update_task(task_id: str, task: TaskCreate, current_user: dict = Depen
     updated_task = task.dict()
     updated_task["task_id"] = task_id
     updated_task["user_id"] = current_user["id"]
+
     await tasks_collection.replace_one({"task_id": task_id}, updated_task)
+
+    # Remove _id before returning
+    updated_task.pop("_id", None)
     return TaskResponse(**updated_task)
 
 # Delete Task

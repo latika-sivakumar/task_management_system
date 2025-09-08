@@ -14,13 +14,13 @@ class TaskPriority(str, Enum):
     high = "High"
 
 class TaskCreate(BaseModel):
-    title: str
+    title: Optional[str] = ""   # default empty string
     description: Optional[str] = None
     due_date: Optional[datetime] = None
     priority: TaskPriority = TaskPriority.medium
     status: TaskStatus = TaskStatus.incomplete
-    category_id: Optional[str] = None  # NEW
-    tags: Optional[List[str]] = []  # NEW, list of tag IDs
+    category_id: Optional[str] = None
+    tags: List[str] = []
 
 class TaskResponse(TaskCreate):
     task_id: str
