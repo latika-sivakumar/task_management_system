@@ -23,14 +23,8 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
     task_doc.setdefault("priority", TaskPriority.medium.value)
     task_doc.setdefault("due_date", datetime.utcnow())
 
-    # Only include reminder_time if user actually set it
-    if not task_doc.get("reminder_time"):
-        task_doc.pop("reminder_time", None)
-
     await tasks_collection.insert_one(task_doc)
 
-    # Remove MongoDB _id
-    task_doc.pop("_id", None)
     return TaskResponse(**task_doc)
 
 # Get all tasks for user
