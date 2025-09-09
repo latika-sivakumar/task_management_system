@@ -1,13 +1,16 @@
 # routes/task.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from models.task import TaskCreate, TaskResponse, TaskStatus,TaskPriority
 from database import db
 from dependencies import get_current_user
 from uuid import uuid4
+from typing import Optional
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 tasks_collection = db["tasks"]
+categories_collection = db["categories"]
+tags_collection = db["tags"]
 
 # Create Task
 @router.post("/", response_model=TaskResponse)
@@ -32,11 +35,36 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
 
 # Get all tasks for user
 @router.get("/", response_model=list[TaskResponse])
-async def get_tasks(current_user: dict = Depends(get_current_user)):
+async def get_tasks(
+    status: Optional[TaskStatus] = Query(None, description="Filter by status"),
+    priority: Optional[TaskPriority] = Query(None, description="Filter by priority"),
+    category_id: Optional[str] = Query(None, description="Filter by category ID"),
+    tag_id: Optional[str] = Query(None, description="Filter by tag ID"),
+    search: Optional[str] = Query(None, description="Search in title or description"),
+    skip: int = Query(0, description="Number of tasks to skip"),
+    limit: int = Query(10, description="Maximum number of tasks to return"),
+    current_user: dict = Depends(get_current_user)
+):
+    query = {"user_id": current_user["id"]}
+
+    if status:
+        query["status"] = status.value
+    if priority:
+        query["priority"] = priority.value
+    if category_id:
+        query["category_id"] = category_id
+    if tag_id:
+        query["tags"] = tag_id
+    if search:
+        query["$or"] = [
+            {"title": {"$regex": search, "$options": "i"}},
+            {"description": {"$regex": search, "$options": "i"}}
+        ]
+
     tasks = []
-    cursor = tasks_collection.find({"user_id": current_user["id"]})
+    cursor = tasks_collection.find(query).skip(skip).limit(limit)
     async for task in cursor:
-        task.pop("_id", None)  # REMOVE _id
+        task.pop("_id", None)
         tasks.append(TaskResponse(**task))
     return tasks
 
@@ -65,26 +93,48 @@ async def delete_task(task_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=404, detail="Task not found")
     return {"detail": "Task deleted successfully"}
 
-# Assign category to task
+# Assign category to task (create if doesn't exist)
 @router.post("/{task_id}/add-category")
-async def add_category(task_id: str, category_id: str):
+async def add_category(task_id: str, category_name: str):
     task = await tasks_collection.find_one({"task_id": task_id})
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    task["category_id"] = category_id
+    # Check if category already exists
+    category = await categories_collection.find_one({"name": category_name})
+    if not category:
+        # Create new category
+        new_category = {"id": str(uuid4()), "name": category_name}
+        await categories_collection.insert_one(new_category)
+        category_id = new_category["id"]
+    else:
+        category_id = category["id"]
+
+    # Assign category to task
     await tasks_collection.update_one({"task_id": task_id}, {"$set": {"category_id": category_id}})
-    return {"task_id": task_id, "category_id": category_id}
+    return {"task_id": task_id, "category_id": category_id, "category_name": category_name}
 
-# Assign tag to task
+# Assign tag to task (create if doesn't exist)
 @router.post("/{task_id}/add-tag")
-async def add_tag(task_id: str, tag_id: str):
+async def add_tag(task_id: str, tag_name: str):
     task = await tasks_collection.find_one({"task_id": task_id})
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    # Check if tag already exists
+    tag = await tags_collection.find_one({"name": tag_name})
+    if not tag:
+        # Create new tag
+        new_tag = {"id": str(uuid4()), "name": tag_name}
+        await tags_collection.insert_one(new_tag)
+        tag_id = new_tag["id"]
+    else:
+        tag_id = tag["id"]
+
+    # Assign tag to task
     task_tags = task.get("tags", [])
     if tag_id not in task_tags:
         task_tags.append(tag_id)
         await tasks_collection.update_one({"task_id": task_id}, {"$set": {"tags": task_tags}})
+
     return {"task_id": task_id, "tags": task_tags}
