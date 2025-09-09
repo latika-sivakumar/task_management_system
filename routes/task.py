@@ -25,6 +25,9 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
 
     await tasks_collection.insert_one(task_doc)
 
+    # Remove MongoDB _id
+    task_doc.pop("_id", None)
+
     return TaskResponse(**task_doc)
 
 # Get all tasks for user
