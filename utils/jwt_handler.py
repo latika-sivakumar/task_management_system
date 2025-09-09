@@ -9,7 +9,7 @@ import os
 # Load environment variables from .env
 load_dotenv()
 
-SECRET_KEY = "c54dfaea985a3711c1cac986e30922f39c01e30231acdebd7514ca9932c720b5"
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
