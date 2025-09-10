@@ -7,12 +7,14 @@ from uuid import uuid4
 from typing import Optional
 from datetime import datetime, timedelta
 from models.activity import ActivityLog
+from models.reminder import ReminderCreate, ReminderResponse
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 tasks_collection = db["tasks"]
 categories_collection = db["categories"]
 tags_collection = db["tags"]
 activity_collection = db["activity_logs"]
+reminders_collection = db["reminders"]
 
 # Create Task
 @router.post("/", response_model=TaskResponse)
@@ -163,3 +165,36 @@ async def get_task_logs(task_id: str, current_user: dict = Depends(get_current_u
     for log in logs:
         log.pop("_id", None)
     return logs
+
+@router.post("/{task_id}/set-reminder")
+async def set_reminder(task_id: str, remind_at: datetime, current_user: dict = Depends(get_current_user)):
+    task = await tasks_collection.find_one({"task_id": task_id, "user_id": current_user["id"]})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Overwrite the previous reminder
+    await tasks_collection.update_one(
+        {"task_id": task_id},
+        {"$set": {"remind_at": remind_at}}
+    )
+
+    return {"task_id": task_id, "remind_at": remind_at}
+
+@router.get("/reminders")
+async def get_reminders(current_user: dict = Depends(get_current_user)):
+    now = datetime.utcnow()
+    next_24h = now + timedelta(hours=24)
+
+    cursor = tasks_collection.find({
+        "user_id": current_user["id"],
+        "remind_at": {"$exists": True, "$lte": next_24h, "$gte": now}
+    })
+
+    reminders = []
+    async for task in cursor:
+        reminders.append({
+            "task_id": task["task_id"],
+            "remind_at": task["remind_at"]
+        })
+
+    return reminders
