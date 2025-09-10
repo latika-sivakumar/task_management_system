@@ -6,11 +6,13 @@ from dependencies import get_current_user
 from uuid import uuid4
 from typing import Optional
 from datetime import datetime, timedelta
+from models.activity import ActivityLog
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 tasks_collection = db["tasks"]
 categories_collection = db["categories"]
 tags_collection = db["tags"]
+activity_collection = db["activity_logs"]
 
 # Create Task
 @router.post("/", response_model=TaskResponse)
@@ -27,6 +29,7 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
     task_doc.setdefault("due_date", datetime.utcnow())
 
     await tasks_collection.insert_one(task_doc)
+    await log_activity(task_doc["task_id"], current_user["id"], "created", {"title": task_doc["title"]})
 
     # Remove MongoDB _id
     task_doc.pop("_id", None)
@@ -80,6 +83,7 @@ async def update_task(task_id: str, task: TaskCreate, current_user: dict = Depen
     updated_task["user_id"] = current_user["id"]
 
     await tasks_collection.replace_one({"task_id": task_id}, updated_task)
+    await log_activity(task_id, current_user["id"], "updated", {"updated_fields": updated_task})
 
     # Remove _id before returning
     updated_task.pop("_id", None)
@@ -89,6 +93,7 @@ async def update_task(task_id: str, task: TaskCreate, current_user: dict = Depen
 @router.delete("/{task_id}")
 async def delete_task(task_id: str, current_user: dict = Depends(get_current_user)):
     result = await tasks_collection.delete_one({"task_id": task_id, "user_id": current_user["id"]})
+    await log_activity(task_id, current_user["id"], "deleted")
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Task not found")
     return {"detail": "Task deleted successfully"}
@@ -112,6 +117,8 @@ async def add_category(task_id: str, category_name: str):
 
     # Assign category to task
     await tasks_collection.update_one({"task_id": task_id}, {"$set": {"category_id": category_id}})
+    await log_activity(task_id, task["user_id"], "category_added", {"category": category_name})
+
     return {"task_id": task_id, "category_id": category_id, "category_name": category_name}
 
 # Assign tag to task (create if doesn't exist)
@@ -136,5 +143,23 @@ async def add_tag(task_id: str, tag_name: str):
     if tag_id not in task_tags:
         task_tags.append(tag_id)
         await tasks_collection.update_one({"task_id": task_id}, {"$set": {"tags": task_tags}})
+        await log_activity(task_id, task["user_id"], "tag_added", {"tag": tag_name})
 
     return {"task_id": task_id, "tags": task_tags}
+
+async def log_activity(task_id: str, user_id: str, action: str, details: dict = None):
+    log_doc = ActivityLog(
+        task_id=task_id,
+        user_id=user_id,
+        action=action,
+        timestamp=datetime.utcnow(),
+        details=details
+    ).dict()
+    await activity_collection.insert_one(log_doc)
+
+@router.get("/{task_id}/logs")
+async def get_task_logs(task_id: str, current_user: dict = Depends(get_current_user)):
+    logs = await activity_collection.find({"task_id": task_id, "user_id": current_user["id"]}).to_list(100)
+    for log in logs:
+        log.pop("_id", None)
+    return logs
