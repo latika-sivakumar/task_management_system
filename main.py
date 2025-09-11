@@ -5,6 +5,7 @@ from routes import user
 from routes import task
 from routes.category import router as category_router  # NEW
 from routes.tag import router as tag_router            # NEW
+from utils.reminder_scheduler import start_scheduler
 
 app = FastAPI()
 
@@ -19,3 +20,5 @@ app.include_router(tag_router)       # include tags endpoints
 async def root():
     collections = await db.list_collection_names()
     return {"message": "Hello, World!", "collections": collections}
+
+start_scheduler()

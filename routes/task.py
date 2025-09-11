@@ -1,13 +1,15 @@
 # routes/task.py
-from fastapi import APIRouter, Depends, HTTPException, Query
+from ecdsa.util import oid_ecPublicKey
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from models.task import TaskCreate, TaskResponse, TaskStatus,TaskPriority
 from database import db
 from dependencies import get_current_user
 from uuid import uuid4
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from models.activity import ActivityLog
 from models.reminder import ReminderCreate, ReminderResponse
+from utils.email_sender import send_email
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 tasks_collection = db["tasks"]
@@ -22,6 +24,7 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
     task_doc = task.dict()
     task_doc["task_id"] = str(uuid4())
     task_doc["user_id"] = current_user["id"]
+    task_doc["user_email"] = current_user["email"]
 
     # Set defaults if missing
     task_doc.setdefault("title", "")
@@ -172,13 +175,15 @@ async def set_reminder(task_id: str, remind_at: datetime, current_user: dict = D
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Overwrite the previous reminder
+    # Convert remind_at to UTC
+    remind_at_utc = remind_at.astimezone(timezone.utc)
+
     await tasks_collection.update_one(
         {"task_id": task_id},
-        {"$set": {"remind_at": remind_at}}
+        {"$set": {"remind_at": remind_at_utc}}
     )
 
-    return {"task_id": task_id, "remind_at": remind_at}
+    return {"task_id": task_id, "remind_at": remind_at_utc}
 
 @router.get("/reminders")
 async def get_reminders(current_user: dict = Depends(get_current_user)):
