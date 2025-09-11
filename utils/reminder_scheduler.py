@@ -33,7 +33,6 @@ async def send_due_reminders():
         )
         print(f"[Reminder Scheduler] Reminder removed for task: {task_title}")
 
-
 def start_scheduler():
     scheduler = AsyncIOScheduler()
     # Schedule the async function directly
